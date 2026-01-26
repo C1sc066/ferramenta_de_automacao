@@ -203,7 +203,7 @@ action_manual_clean() {
     read -r dias
     [[ -z "$dias" ]] && dias=10
 
-    # Contagem prévia
+    # Contagem prévia de arquivos
     local count=$(find "$target" -type f -mtime +$dias | wc -l)
     
     if [ "$count" -eq 0 ]; then
@@ -211,28 +211,42 @@ action_manual_clean() {
         read -r; return
     fi
 
+    # --- NOVO: Cálculo do tamanho total para o box de info ---
+    msg "info" "Calculando tamanho total..."
+    # Tenta usar du com a lista de arquivos. O 2>/dev/null esconde erros de permissão.
+    local total_size=$(find "$target" -type f -mtime +$dias -exec du -ch {} + 2>/dev/null | grep total$ | cut -f1)
+    # Se falhar ou vier vazio, define como "N/A"
+    [[ -z "$total_size" ]] && total_size="Calc. Pendente"
+
     echo ""
-    # Usando Azul Accent para a borda da caixa de confirmação, mas mantendo o texto vermelho para alerta
     echo -e "   ${C_ACCENT}┌──────────────────────────────────────────────┐${C_RESET}"
     echo -e "   ${C_ACCENT}│${C_RESET} ${C_RED}🛑 CONFIRMAÇÃO DE EXCLUSÃO${C_RESET}                  ${C_ACCENT}│${C_RESET}"
     echo -e "   ${C_ACCENT}├──────────────────────────────────────────────┤${C_RESET}"
     echo -e "   ${C_ACCENT}│${C_RESET} Arquivos: ${C_WHITE}${C_BOLD}$count${C_RESET}"
+    echo -e "   ${C_ACCENT}│${C_RESET} Tamanho:  ${C_WHITE}${C_BOLD}$total_size${C_RESET}"  # Linha Nova
     echo -e "   ${C_ACCENT}│${C_RESET} Retenção: ${C_WHITE}${C_BOLD}$dias dias${C_RESET}"
-    echo -e "   ${C_ACCENT}│${C_RESET} Destino:  ${C_GRAY}$(basename $target)${C_RESET}"
+    echo -e "   ${C_ACCENT}│${C_RESET} Destino:  ${C_GRAY}$(basename "$target")${C_RESET}"
     echo -e "   ${C_ACCENT}└──────────────────────────────────────────────┘${C_RESET}"
     
+    echo -e "\n   ${C_YELLOW}Arquivos que serão removidos (Tamanho | Caminho):${C_RESET}"
+    
+    # --- ALTERAÇÃO PRINCIPAL AQUI ---
+    # Usa 'du -h' para mostrar tamanho legível e indenta com sed para visual
+    find "$target" -type f -mtime +$dias -exec du -h {} + | sort -rh | sed 's/^/   /'
+    
+    echo ""
     msg "input" "Digite 'SIM' para apagar:"
     read -r confirm
 
     if [[ "$confirm" == "SIM" ]]; then
         mkdir -p "$(dirname "$LOG_FILE")"
-        echo -e "\n[$(date "+%F %T")] MANUAL EXECUTION (Days: $dias)" >> $LOG_FILE
+        echo -e "\n[$(date "+%F %T")] MANUAL EXECUTION (Days: $dias)" >> "$LOG_FILE"
         
         # Execução com spinner
-        (find "$target" -type f -mtime +$dias -exec rm -v {} \; >> $LOG_FILE 2>&1) &
+        (find "$target" -type f -mtime +$dias -exec rm -v {} \; >> "$LOG_FILE" 2>&1) &
         spinner_bar $! "Removendo arquivos antigos"
         
-        msg "success" "Limpeza finalizada."
+        msg "success" "Limpeza finalizada. Espaço liberado: $total_size"
     else
         msg "info" "Operação cancelada."
     fi
